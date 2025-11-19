@@ -91,6 +91,9 @@ def parse_vm3_events(buf: bytes) -> List[Tuple[Any, ...]]:
     Returns a list of tuples like:
       ("prog", abs_tick, ch, program)
       ("ctrl", abs_tick, ch, controller, value)
+      ("aftertouch", abs_tick, ch, note, pressure)
+      ("ch_pressure", abs_tick, ch, pressure)
+      ("pitch_bend", abs_tick, ch, lsb, msb)
       ("note_on", abs_tick, ch, note, vel, gate)
       ("note_on80", abs_tick, ch, note, vel, -1)
       ("sysex", abs_tick, data_bytes)
@@ -148,6 +151,15 @@ def parse_vm3_events(buf: bytes) -> List[Tuple[Any, ...]]:
             gate, i = read_varlen(buf, i)
             events.append(("note_on", abs_tick, ch, note, vel, gate))
 
+        elif st_hi == 0xA0:
+            # Polyphonic aftertouch (key pressure)
+            if i + 1 > len(buf):
+                break
+            note = buf[i]
+            pressure = buf[i + 1]
+            i += 2
+            events.append(("aftertouch", abs_tick, ch, note, pressure))
+
         elif st_hi == 0xB0:
             # Controller change
             if i + 1 > len(buf):
@@ -164,6 +176,23 @@ def parse_vm3_events(buf: bytes) -> List[Tuple[Any, ...]]:
             prg = buf[i]
             i += 1
             events.append(("prog", abs_tick, ch, prg))
+
+        elif st_hi == 0xD0:
+            # Channel pressure (aftertouch)
+            if i >= len(buf):
+                break
+            pressure = buf[i]
+            i += 1
+            events.append(("ch_pressure", abs_tick, ch, pressure))
+
+        elif st_hi == 0xE0:
+            # Pitch bend (LSB, MSB)
+            if i + 1 > len(buf):
+                break
+            lsb = buf[i]
+            msb = buf[i + 1]
+            i += 2
+            events.append(("pitch_bend", abs_tick, ch, lsb, msb))
 
         else:
             # Unknown or end of sequence
@@ -213,6 +242,13 @@ def _midi_events_from_vm3_events(
             midi_events.append((tick * duration_base, order_counter, midi_bytes))
             order_counter += 1
 
+        elif kind == "aftertouch":
+            _, tick, ch, note, pressure = ev
+            status = 0xA0 | (ch & 0x0F)
+            midi_bytes = bytes([status, note & 0x7F, pressure & 0x7F])
+            midi_events.append((tick * duration_base, order_counter, midi_bytes))
+            order_counter += 1
+
         elif kind == "ctrl":
             _, tick, ch, ctr, val = ev
             status = 0xB0 | (ch & 0x0F)
@@ -242,6 +278,20 @@ def _midi_events_from_vm3_events(
             tick_off = tick + gate_ticks
             status_off = 0x80 | (ch & 0x0F)
             midi_events.append((tick_off, order_counter, bytes([status_off, note & 0x7F, 64])))
+            order_counter += 1
+
+        elif kind == "ch_pressure":
+            _, tick, ch, pressure = ev
+            status = 0xD0 | (ch & 0x0F)
+            midi_bytes = bytes([status, pressure & 0x7F])
+            midi_events.append((tick * duration_base, order_counter, midi_bytes))
+            order_counter += 1
+
+        elif kind == "pitch_bend":
+            _, tick, ch, lsb, msb = ev
+            status = 0xE0 | (ch & 0x0F)
+            midi_bytes = bytes([status, lsb & 0x7F, msb & 0x7F])
+            midi_events.append((tick * duration_base, order_counter, midi_bytes))
             order_counter += 1
 
     midi_events.sort(key=lambda x: (x[0], x[1]))
