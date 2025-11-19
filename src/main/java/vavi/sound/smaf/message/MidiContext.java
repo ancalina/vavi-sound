@@ -476,15 +476,34 @@ logger.log(Level.TRACE, "tempoTable: " + tempoTable.length);
     /** if no tempo is specified, SSD will treat it as a quarter note = 120 */
     private static final int tempo = 120;
 
-    /** */
+    /** duration time base [msec] */
     private int timeBase = 2;
+
+    /** gate time base [msec] */
+    private int gateTimeBase = timeBase;
 
     /**
      * @return Returns the ticks.
      * @see #timeBase
      */
     public long getTicksOf(long gateTime) {
-        return gateTime * timeBase;
+        return getGateTicks(gateTime);
+    }
+
+    /**
+     * @param duration duration value based on duration time base
+     * @return ticks for duration
+     */
+    public long getDurationTicks(long duration) {
+        return duration * timeBase;
+    }
+
+    /**
+     * @param gateTime gate time value based on gate time base
+     * @return ticks for gate time
+     */
+    public long getGateTicks(long gateTime) {
+        return gateTime * gateTimeBase;
     }
 
     /**
@@ -527,7 +546,9 @@ int t = 0;
                 if (message instanceof vavi.sound.smaf.MetaMessage metaMessage) {
                     if (metaMessage.getType() == MetaEvent.META_MACHINE_DEPEND.number()) {
                         this.timeBase = (Integer) metaMessage.getData().get("durationTimeBase"); // [ms]
+                        this.gateTimeBase = (Integer) metaMessage.getData().getOrDefault("gateTimeTimeBase", timeBase); // [ms]
 logger.log(Level.DEBUG, "timebase: " + timeBase + ", (" + t + ":" + i + ")");
+logger.log(Level.DEBUG, "gate timebase: " + gateTimeBase + ", (" + t + ":" + i + ")");
                         return tempo * timeBase;
                     }
                 }
